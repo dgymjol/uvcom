@@ -1,11 +1,11 @@
-export CUDA_VISIBLE_DEVICES=7
-export CUDA_LAUNCH_BLOCKING=1
+# export CUDA_VISIBLE_DEVICES=7
+# export CUDA_LAUNCH_BLOCKING=1
 
 dset_name=hl
 ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
-results_root=path_to_save/qvhighlights_results
+results_root=results
 device=1
 enc_layers=3
 dec_layers=3
@@ -29,7 +29,7 @@ eval_path=data/highlight_val_release.jsonl
 eval_split_name=val
 
 ######## setup video+text features
-feat_root=path_to_qv_features/features
+feat_root=../features
 
 # video features
 v_feat_dim=0
@@ -68,7 +68,7 @@ PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id ${exp_id} \
+--exp_id vessl-3090-1.9-reproduction \
 --device ${device} \
 --span_loss_type ${span_loss_type} \
 --lr ${lr} \
