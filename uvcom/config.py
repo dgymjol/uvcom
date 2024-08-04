@@ -158,6 +158,16 @@ class BaseOptions(object):
 
         # add for ablation 
         parser.add_argument('--cross_fusion',default=False)
+
+        parser.add_argument('--m_classes', type=str, default=None)
+        parser.add_argument('--tgt_embed', action='store_true')
+        parser.add_argument('--cc_matching', action="store_true")
+        parser.add_argument('--class_anchor', action="store_true")
+        parser.add_argument("--pos_query", default=1, type=int, help="pos_query")
+        parser.add_argument("--no_text", action='store_true')
+        parser.add_argument("--no_slot", action='store_true')
+
+
         self.parser = parser
 
     def display_save(self, opt):

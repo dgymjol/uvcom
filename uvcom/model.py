@@ -53,7 +53,8 @@ class UVCOM(nn.Module):
 
     def __init__(self, CIM, position_embed, txt_position_embed, txt_dim, vid_dim,
                  num_queries, input_dropout, aux_loss=False,
-                 max_v_l=75, span_loss_type="l1", use_txt_pos=False, n_input_proj=2, aud_dim=0,neg_choose_epoch=80):
+                 max_v_l=75, span_loss_type="l1", use_txt_pos=False, n_input_proj=2, aud_dim=0,neg_choose_epoch=80,
+                 m_classes=None, tgt_embed=False, class_anchor=False):
         """ Initializes the model.
         Parameters:
             transformer: torch module of the transformer architecture. See transformer.py
@@ -80,12 +81,24 @@ class UVCOM(nn.Module):
         hidden_dim = CIM.d_model
         self.span_loss_type = span_loss_type
         self.max_v_l = max_v_l
+
+        self.m_classes=m_classes
+
         span_pred_dim = 2 if span_loss_type == "l1" else max_v_l * 2
+        if self.m_classes is None:
+            self.num_patterns = 1
+        else:
+            self.m_vals = [int(v) for v in m_classes[1:-1].split(',')]
+            if not tgt_embed or class_anchor:
+                self.num_patterns = len(self.m_vals)
+            else:
+                self.num_patterns = 1
+        self.class_embed = nn.Linear(hidden_dim, 2)
         self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
-        self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+
         self.use_txt_pos = use_txt_pos
         self.n_input_proj = n_input_proj
-        self.query_embed = nn.Embedding(num_queries, 2)
+        self.query_embed = nn.Embedding(num_queries, 2*self.num_patterns)
         relu_args = [True] * 3
         relu_args[n_input_proj-1] = False
         self.input_txt_proj = nn.Sequential(*[
@@ -227,7 +240,7 @@ class SetCriterion(nn.Module):
     """
 
     def __init__(self, matcher, weight_dict, eos_coef, losses, span_loss_type, max_v_l,
-                 saliency_margin=1, use_matcher=True):
+                 saliency_margin=1, use_matcher=True, m_classes=None, ):
         """ Create the criterion.
         Parameters:
             matcher: module able to compute a matching between targets and proposals
@@ -242,18 +255,22 @@ class SetCriterion(nn.Module):
         self.matcher = matcher
         self.weight_dict = weight_dict
         self.losses = losses
+        self.eos_coef = eos_coef
         self.span_loss_type = span_loss_type
         self.max_v_l = max_v_l
         self.saliency_margin = saliency_margin
+        self.m_classes = m_classes
 
         # foreground and background classification
         self.foreground_label = 0
         self.background_label = 1
-        self.eos_coef = eos_coef
+        
         empty_weight = torch.ones(2)
         empty_weight[-1] = self.eos_coef  # lower weight for background (index 1, foreground index 0)
         self.register_buffer('empty_weight', empty_weight)
-        
+        if m_classes is not None: 
+            self.num_classes = len(m_classes[1:-1].split(','))
+
         # for tvsum,
         self.use_matcher = use_matcher
 
@@ -569,7 +586,10 @@ def build_model(args):
             span_loss_type=args.span_loss_type,
             use_txt_pos=args.use_txt_pos,
             n_input_proj=args.n_input_proj,
-            neg_choose_epoch=args.neg_choose_epoch
+            neg_choose_epoch=args.neg_choose_epoch,
+            m_classes=args.m_classes,
+            tgt_embed=args.tgt_embed,
+            class_anchor=args.class_anchor,
         )
     else:
         model = UVCOM(
@@ -585,7 +605,10 @@ def build_model(args):
             span_loss_type=args.span_loss_type,
             use_txt_pos=args.use_txt_pos,
             n_input_proj=args.n_input_proj,
-            neg_choose_epoch=args.neg_choose_epoch
+            neg_choose_epoch=args.neg_choose_epoch,
+            m_classes=args.m_classes,
+            tgt_embed=args.tgt_embed,
+            class_anchor=args.class_anchor,
         )
 
     matcher = build_matcher(args)
@@ -613,6 +636,7 @@ def build_model(args):
         eos_coef=args.eos_coef,
         span_loss_type=args.span_loss_type, max_v_l=args.max_v_l,
         saliency_margin=args.saliency_margin, use_matcher=use_matcher,
+        m_classes=args.m_classes,
     )
     criterion.to(device)
     return model, criterion

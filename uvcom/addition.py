@@ -35,8 +35,8 @@ def BMRW(x, y, w):
     latent_z = F.softmax(torch.einsum('nkd,ntd->nkt', [y_norm, x_norm]) * 5.0, 1)
     norm_latent_z = latent_z / (latent_z.sum(dim=-1, keepdim=True) + 1e-9)
     affinity_mat = torch.einsum('nkt,nkd->ntd', [latent_z, norm_latent_z])
-    # mat_inv_x, _ = torch.linalg.solve(eye_x, eye_x - (w ** 2) * affinity_mat)
-    mat_inv_x, _ = torch.solve(eye_x, eye_x - (w ** 2) * affinity_mat)
+    mat_inv_x = torch.linalg.solve(eye_x, eye_x - (w ** 2) * affinity_mat)
+    # mat_inv_x, _ = torch.solve(eye_x, eye_x - (w ** 2) * affinity_mat)
     y2x_sum_x = w * torch.einsum('nkt,nkd->ntd', [latent_z, y]) + x
     refined_x = (1 - w) * torch.einsum('ntk,nkd->ntd', [mat_inv_x, y2x_sum_x])    
 

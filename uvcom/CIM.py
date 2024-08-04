@@ -79,16 +79,51 @@ class CIM(nn.Module):
                  n_txt_mu = 5,
                  n_visual_mu = 30,
                  em_iter = 5,
-                 cross_fusion = False
+                 cross_fusion = False,
+                 m_classes=None, tgt_embed=False, class_anchor=False, no_text=False, no_slot=False,
                  ):
         super().__init__()
+
+        self.m_classes = m_classes
+        self.tgt_embed = tgt_embed
+        self.class_anchor = class_anchor
+        self.no_text = no_text
+        self.no_slot = no_slot
+
+        if self.no_text:
+            self.no_slot = True
+
+        if self.class_anchor:
+            assert self.tgt_embed
+        if not self.no_slot:
+            assert not self.no_text
+        if not self.no_text and self.tgt_embed:
+            assert not self.no_slot
+
+        self.span_pattern = False
+        if m_classes is not None:
+            self.num_classes = len(m_classes[1:-1].split(','))
+            if self.tgt_embed:
+                self.span_pattern = True
+                if self.no_text:
+                    self.patterns = nn.Embedding(self.num_classes, d_model)
+        else:
+            self.num_classes = 1
 
         t2v_encoder_layer = T2V_TransformerEncoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
         self.t2v_encoder = TransformerEncoder(t2v_encoder_layer, num_encoder_layers, encoder_norm)
         
-        self.processer_for_tgt = SlotAttention(num_iterations=5, num_slots=num_queries, d_model=d_model)
+        if not no_slot:
+            num_slots = num_queries
+            if not self.tgt_embed:
+                    num_slots=num_queries * self.num_classes
+            if not no_text:
+                self.processer_for_tgt = SlotAttention(num_iterations=5, num_slots=num_slots, d_model=d_model)
+        else:
+            num_slots = 0
+        self.num_slots = num_slots
 
         self.use_v2t_encode = v2t_encode
         if self.use_v2t_encode:
@@ -111,7 +146,7 @@ class CIM(nn.Module):
                                           d_model=d_model, query_dim=query_dim, keep_query_pos=keep_query_pos, query_scale_type=query_scale_type,
                                           modulate_t_attn=modulate_t_attn,
                                           bbox_embed_diff_each_layer=bbox_embed_diff_each_layer, 
-                                          num_slots=num_queries)  
+                                          num_slots=num_slots, span_pattern=self.span_pattern, num_classes=self.num_classes)
         self.feature_proj = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.LayerNorm(d_model),
@@ -141,7 +176,6 @@ class CIM(nn.Module):
             self.sim_vid = MLP(d_model, 1024, d_model, 3)
             self.sim_txt = MLP(d_model, 1024, d_model, 3)
 
-
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -166,14 +200,21 @@ class CIM(nn.Module):
         bs, l, d = src.shape
         src = src.permute(1, 0, 2)  # (L, batch_size, d)
         pos_embed = pos_embed.permute(1, 0, 2)   # (L, batch_size, d)
-        refpoint_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)  # (#queries, batch_size, d)
 
+        if not self.tgt_embed or self.class_anchor:
+                num_queries = query_embed.shape[0]
+                # class_query_embed = query_embed.view(num_queries, -1, 2).permute(1, 0, 2)
+                class_refpoint_embed = query_embed.unsqueeze(1).repeat(1, bs, 1).view(num_queries, bs, -1, 2).permute(2, 0, 1, 3)  # (#class, #queries, batch_size, d)
+                refpoint_embed = torch.cat([rp for rp in class_refpoint_embed], dim=0) # (#class * #queries, batch_size, d)
+        else:
+            refpoint_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)  # (#queries, batch_size, d)
+                  
         src_for_vid = self.t2v_encoder(src, src_key_padding_mask=mask, pos=pos_embed, video_length=video_length)  # (L, batch_size, d)
         if self.use_v2t_encode:
             src_for_txt = self.v2t_encoder(src, src_key_padding_mask=mask, pos=pos_embed, video_length=video_length)  # (L, batch_size, d)
-            src_txt = src_for_txt[video_length+1:]
-            txt_seq = self.feature_proj(src_txt)
-            txt_seq = txt_seq.mean(0)
+            src_txt = src_for_txt[video_length+1:] #(seq_len, batchsize, hidden_dim) = (24, 32, 256)
+            txt_seq = self.feature_proj(src_txt) #(seq_len, batchsize, hidden_dim) = (24, 32, 256)
+            txt_seq = txt_seq.mean(0) #(batchsize, hidden_dim) = (32, 256)
         else:
             tgt = torch.zeros(refpoint_embed.shape[0], bs, d).to(src_for_vid.device)
 
@@ -230,10 +271,36 @@ class CIM(nn.Module):
         memory_global, memory_local = memory[0], memory[1:]
         mask_local = mask[:, 1:]
         pos_embed_local = pos_embed[1:]
-        txt_query = repeat(txt_seq, "b d -> b q d", q=refpoint_embed.shape[0])
 
-        tgt = self.processer_for_tgt(memory_local, mask_local, txt_query)
-        tgt = rearrange(tgt, "b q d -> q b d")
+        if self.no_text:
+            if self.m_classes is not None:
+                if self.tgt_embed:
+                    tgt = self.patterns.weight[:, None, None, :].repeat(1, self.num_queries, bs, 1).flatten(0, 1)
+                    if not self.class_anchor:
+                        refpoint_embed = refpoint_embed.repeat(self.num_classes, 1, 1)
+                else:
+                    tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device="cuda")
+            else:
+                tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device="cuda")
+                      
+        else:
+            if self.no_slot:
+                txt_query = repeat(txt_seq, "b d -> b q d", q=self.num_queries) # (batch, num_queries, hidden_dim) = (32, 10, 256)
+                patterns = txt_query
+            else:
+                txt_query = repeat(txt_seq, "b d -> b q d", q=self.num_slots) # (batch, num_queries, hidden_dim) = (32, 10, 256)
+                patterns = self.processer_for_tgt(memory_local, mask_local, txt_query) # (batch, num_queries, hidden_dim) = (32, 10, 256)
+            tgt = rearrange(patterns, "b q d -> q b d")
+            
+            if self.m_classes is not None:
+                if self.tgt_embed:
+                    tgt = tgt.repeat(self.num_classes, 1, 1)
+                    if not self.class_anchor:
+                        refpoint_embed = refpoint_embed.repeat(self.num_classes, 1, 1)
+                else:
+                    tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device="cuda")
+            else:
+                tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device="cuda")
 
         hs, references = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
                           pos=pos_embed_local, refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
@@ -346,7 +413,7 @@ class TransformerDecoder(nn.Module):
                  d_model=256, query_dim=2, keep_query_pos=False, query_scale_type='cond_elewise',
                  modulate_t_attn=False,
                  bbox_embed_diff_each_layer=False,
-                 num_slots=30,
+                 num_slots=30, span_pattern=False, num_classes=1
                  ):
         super().__init__()
         self.layers = _get_clones(decoder_layer, num_layers)
@@ -356,7 +423,12 @@ class TransformerDecoder(nn.Module):
         assert return_intermediate
         self.query_dim = query_dim
 
-        self.span_embed = nn.Embedding(num_slots, d_model)
+        if num_slots == 0:
+            self.span_embed = None
+        else:
+            self.span_embed = nn.Embedding(num_slots, d_model)
+        self.span_pattern = span_pattern
+        self.num_classes = num_classes
 
         assert query_scale_type in ['cond_elewise', 'cond_scalar', 'fix_elewise']
         self.query_scale_type = query_scale_type
@@ -402,8 +474,15 @@ class TransformerDecoder(nn.Module):
                 pos: Optional[Tensor] = None,
                 refpoints_unsigmoid: Optional[Tensor] = None,  # num_queries, bs, 2
                 ):
-        span_embedd = repeat(self.span_embed.weight, "q d -> q b d", b=tgt.shape[1])
-        output = tgt + span_embedd
+        if self.span_embed is None:
+            output = tgt
+        else:
+            if self.span_pattern:
+                span_embedd = self.span_embed.weight[:, None, :].repeat(self.num_classes, tgt.shape[1], 1)
+            else:
+                span_embedd = repeat(self.span_embed.weight, "q d -> q b d", b=tgt.shape[1])
+                
+            output = tgt + span_embedd
         
         intermediate = []
         reference_points = refpoints_unsigmoid.sigmoid()
@@ -1083,7 +1162,13 @@ def build_CIM(args):
         em_iter = args.em_iter,
         n_txt_mu = args.n_txt_mu,
         n_visual_mu = args.n_visual_mu,
-        cross_fusion=args.cross_fusion
+        cross_fusion=args.cross_fusion,
+        num_queries=args.num_queries,
+        m_classes=args.m_classes,
+        tgt_embed=args.tgt_embed,
+        class_anchor=args.class_anchor,
+        no_text=args.no_text,
+        no_slot=args.no_slot,
     )
 
 
