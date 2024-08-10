@@ -141,6 +141,8 @@ def eval_moment_retrieval(submission, ground_truth, verbose=True,dataset='hl'):
         length_ranges = [[0, 10], [10, 30], [0, 150], ]  #
         range_names = ["short", "middle", "full"]
     else:
+        length_ranges = [[0, 10], [10, 30], [30, 100000000], [0, 100000000], ]  #
+        range_names = ["short", "middle", "long", "full"]
         print("do not contain target dataset")
 
     ret_metrics = {}

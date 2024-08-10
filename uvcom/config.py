@@ -21,7 +21,7 @@ class BaseOptions(object):
     def initialize(self):
         self.initialized = True
         parser = argparse.ArgumentParser()
-        parser.add_argument("--dset_name", type=str, choices=["hl", 'tvsum','charades','charades_vgg'])
+        parser.add_argument("--dset_name", type=str, choices=["hl", 'tvsum','charades','charades_vgg', 'tacos'])
         parser.add_argument("--dset_domain", type=str, choices=["BK", "BT", "DS", "FM", "GA", "MS", "PK", "PR", "VT", "VU"], 
                             help="Domain to train for tvsum dataset. (Only used for tvsum)")
         
@@ -151,6 +151,7 @@ class BaseOptions(object):
         parser.add_argument('--slot_iter', default=5, type=int)
         parser.add_argument('--n_txt_mu', default=5, type=int)
         parser.add_argument('--n_visual_mu', default=30, type=int)
+        parser.add_argument('--cta_coef', default=0.5, type=float)
 
         #*ddp
         parser.add_argument('--local_rank', default=-1, type=int, help='node rank for distributed training')
@@ -167,7 +168,14 @@ class BaseOptions(object):
         parser.add_argument("--no_text", action='store_true')
         parser.add_argument("--no_slot", action='store_true')
 
-
+        parser.add_argument('--crop', action='store_true')
+        parser.add_argument("--fore_min", type=int, default=10)
+        parser.add_argument("--back_min", type=int, default=10)
+        parser.add_argument("--mid_min", type=int, default=10)
+        parser.add_argument('--crop_random', action='store_true')
+        parser.add_argument('--merge', action='store_true')
+        parser.add_argument('--crop_all', action='store_true')
+        
         self.parser = parser
 
     def display_save(self, opt):

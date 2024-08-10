@@ -88,7 +88,7 @@ class UVCOM(nn.Module):
         if self.m_classes is None:
             self.num_patterns = 1
         else:
-            self.m_vals = [int(v) for v in m_classes[1:-1].split(',')]
+            self.m_vals = [float(v) for v in m_classes[1:-1].split(',')]
             if not tgt_embed or class_anchor:
                 self.num_patterns = len(self.m_vals)
             else:
@@ -240,7 +240,7 @@ class SetCriterion(nn.Module):
     """
 
     def __init__(self, matcher, weight_dict, eos_coef, losses, span_loss_type, max_v_l,
-                 saliency_margin=1, use_matcher=True, m_classes=None, ):
+                 saliency_margin=1, use_matcher=True, m_classes=None, cta_coef=0.5):
         """ Create the criterion.
         Parameters:
             matcher: module able to compute a matching between targets and proposals
@@ -273,6 +273,8 @@ class SetCriterion(nn.Module):
 
         # for tvsum,
         self.use_matcher = use_matcher
+        
+        self.cta_coef = cta_coef
 
     def loss_spans(self, outputs, targets, indices):
         """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
@@ -460,7 +462,7 @@ class SetCriterion(nn.Module):
         loss_clip_intra = sim_clip_intra * gt_clip_intra * mask_clip_intra.float()
         loss_clip_intra = loss_clip_intra.mean(0).mean()
 
-        loss_sim = 0.5 * loss_inter + loss_clip_intra * 0.5
+        loss_sim = 0.5 * loss_inter + loss_clip_intra * self.cta_coef
         loss = {'loss_sim':-loss_sim}
         return loss
 
@@ -636,7 +638,7 @@ def build_model(args):
         eos_coef=args.eos_coef,
         span_loss_type=args.span_loss_type, max_v_l=args.max_v_l,
         saliency_margin=args.saliency_margin, use_matcher=use_matcher,
-        m_classes=args.m_classes,
+        m_classes=args.m_classes, cta_coef=args.cta_coef
     )
     criterion.to(device)
     return model, criterion
