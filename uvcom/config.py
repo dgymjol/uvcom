@@ -248,8 +248,8 @@ class BaseOptions(object):
             opt.v_feat_dim = 0
         if opt.use_tef:
             opt.v_feat_dim += 2
-            if opt.a_feat_dir is not None:
-               opt.a_feat_dim += 2
+            # if opt.a_feat_dir is not None:
+            #    opt.a_feat_dim += 2
 
         # if opt.local_rank == -1:
         #     torch.cuda.set_device(opt.gpu_id)
