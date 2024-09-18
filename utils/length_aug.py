@@ -6,7 +6,17 @@ import math
 from collections import defaultdict
 
 def crop_clip_index(start_index, end_index, non_idx=False, num_crop=1, clip_len=2):
+
+    # if clip_len < 1:# vgg
+    #     start_index = int(start_index) if start_index % 1 == 0 else int(start_index) + 1
+    #     end_index = int(end_index)
+    #     candidates = list(range((start_index) + 1, end_index, 1))
+    #     num_crop = int(num_crop)
+    # else:
+    #     candidates = list(range(start_index + clip_len, end_index, clip_len))
+
     candidates = list(range(start_index + clip_len, end_index, clip_len))
+
     if non_idx:
         candidates.append(-1) # not crop
     if num_crop > 1:
@@ -262,10 +272,17 @@ def crop(data, moments, non_moments, thres_crop, ctx_l, clip_len):
             new_data['relevant_windows'].append([sups + subs, supe - sube])
 
 
+    ### Test ####
     if 'saliency_scores' in data:
         assert len(data['saliency_scores']) == len(new_data['saliency_scores'])
         assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
 
+    clips_for_check = np.zeros(ctx_l)
+    for s, e in new_data['org_clip_ids_order']:
+        clips_for_check[s:e] += 1
+    assert np.all(clips_for_check <= 1)
+    assert np.all(clips_for_check[:-1] > 0)
+    
     return new_data
 
 
@@ -451,9 +468,15 @@ def merge_multi_moments(data, moments, non_moments, thres_merge, ctx_l, clip_len
     # new_data['relevant_windows']
     new_data['relevant_windows'] = find_ones_groups(new_clips, clip_len)
 
+    #### Test 
     assert len(data['saliency_scores']) == len(new_data['saliency_scores'])
     assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
 
+    clips_for_check = np.zeros(ctx_l)
+    for s, e in new_data['org_clip_ids_order']:
+        clips_for_check[s:e] += 1
+    assert np.all(clips_for_check <= 1)
+    assert np.all(clips_for_check > 0)
 
     return new_data
 
@@ -582,8 +605,16 @@ def merge_single_moment(data, moments, non_moments, thres_merge, ctx_l, clip_len
     new_data['relevant_windows'] = find_ones_groups(new_clips, clip_len)
     new_data['duration'] = cur_clip_id * clip_len
 
+    ########## Test
+
     if 'saliency_scores' in data:
         assert len(data['saliency_scores']) == len(new_data['saliency_scores'])
         assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
+
+    clips_for_check = np.zeros(ctx_l)
+    unique_order_clip_ids = list(map(list, set(map(tuple, new_data['org_clip_ids_order']))))
+    for s, e in unique_order_clip_ids:
+        clips_for_check[s:e] += 1
+    assert np.all(clips_for_check <= 1)
 
     return new_data

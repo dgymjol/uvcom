@@ -177,10 +177,9 @@ class StartEndDataset(Dataset):
 
             new_datalist.append(deepcopy(data))
             
-            if 'vgg' in self.dset_name:
-                clip_len = int(data['duration'] / ctx_l)
-            else: 
-                clip_len = int(self.clip_len)
+            clip_len = int(self.clip_len)
+            # if 'vgg' in self.dset_name:
+            #     clip_len = self.clip_len
 
             ctx_l = int(data['duration'] // clip_len) if data['duration'] % clip_len == 0 else int(data['duration'] // clip_len) + 1
             # ctx_l = min(round(data['duration'] // clip_len), self.max_v_l)
@@ -206,7 +205,6 @@ class StartEndDataset(Dataset):
                     non_moments.append([0, moments[0][0]])
                 if moments[0][1] != data['duration']:
                     non_moments.append([moments[0][1], data['duration']])    
-                non_moments[-1][1] = ctx_l * clip_len   
 
             # 만약 non-moment가 없다면 이 data는 pass
             if not non_moments:
@@ -261,7 +259,7 @@ class StartEndDataset(Dataset):
             model_inputs["query_feat"] = self._get_query_feat_by_qid(meta["qid"])  # (Dq, ) or (Lq, Dq)
             
         if self.use_video:
-            if self.crop:
+            if self.crop or self.merge:
                 if 'org_clip_ids_order' in meta.keys():
                     model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["org_clip_ids_order"])  # (Lv, Dv)
                 else:
@@ -301,7 +299,7 @@ class StartEndDataset(Dataset):
                             self.get_saliency_labels_sub_as_query(meta["relevant_windows"], ctx_l) # only one gt
                     elif self.dset_name in ['charades_vgg', 'nlq']:
                         model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                            self.get_saliency_labels_sub_as_query_(meta["relevant_windows"], meta["duration"], ctx_l, 2)  # only one gt
+                            self.get_saliency_labels_sub_as_query_(meta["relevant_windows"][0], meta["duration"], ctx_l, 2)  # only one gt
                     elif "subs_train" not in self.data_path:
                         model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
                             self.get_saliency_labels_all(meta["relevant_clip_ids"], meta["saliency_scores"], ctx_l)
