@@ -58,52 +58,16 @@ bsz=32
 
 gpunum=3
 
-# seed=2018
 
-list="2021 2022 2023 2024 2025"
 
-results_root=results_12_36_65_crop
+results_root='result_crop_aug'
 
-seed=2022
+list="2025 2024 2023 2022 2021"
+for seed in $list
+do
+  echo $seed
 
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---train_path ${train_path} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---device ${device} \
---span_loss_type ${span_loss_type} \
---lr ${lr} \
---enc_layers ${enc_layers} \
---sim_loss_coef ${sim_loss_coef} \
---neg_loss_coef ${neg_loss_coef} \
---lr_gamma ${lr_gamma} \
---dec_layers ${dec_layers} \
---lr_drop ${lr_drop} \
---em_iter 5 \
---n_txt_mu ${n_txt_mu} \
---n_visual_mu ${n_visual_mu} \
---neg_choose_epoch ${neg_choose_epoch} \
---num_queries 10 \
---exp_id base_crop_${seed} \
---m_classes "[12, 36, 65, 150]" \
---no_text \
---tgt_embed \
---cc_matching \
---seed ${seed} \
---crop \
---fore_min 10 \
---back_min 10 \
---mid_min 10 \
---crop_random \
-${@:1}
+aug_seed=6
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
 --dset_name ${dset_name} \
@@ -131,20 +95,16 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
 --n_visual_mu ${n_visual_mu} \
 --neg_choose_epoch ${neg_choose_epoch} \
 --num_queries 10 \
---exp_id base_crop_all_${seed} \
---m_classes "[12, 36, 65, 150]" \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.4, 31.5, 75.0, 150]" \
 --no_text \
 --tgt_embed \
 --cc_matching \
 --seed ${seed} \
---crop \
---fore_min 10 \
---back_min 10 \
---mid_min 10 \
---crop_random \
---crop_all \
 ${@:1}
 
+aug_seed=7
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
 --dset_name ${dset_name} \
@@ -172,102 +132,12 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
 --n_visual_mu ${n_visual_mu} \
 --neg_choose_epoch ${neg_choose_epoch} \
 --num_queries 10 \
---exp_id base_crop_merge_${seed} \
---m_classes "[12, 36, 65, 150]" \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.4, 31.5, 75.0, 150]" \
 --no_text \
 --tgt_embed \
 --cc_matching \
 --seed ${seed} \
---crop \
---fore_min 10 \
---back_min 10 \
---mid_min 10 \
---crop_random \
---merge \
 ${@:1}
-
-
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---train_path ${train_path} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---device ${device} \
---span_loss_type ${span_loss_type} \
---lr ${lr} \
---enc_layers ${enc_layers} \
---sim_loss_coef ${sim_loss_coef} \
---neg_loss_coef ${neg_loss_coef} \
---lr_gamma ${lr_gamma} \
---dec_layers ${dec_layers} \
---lr_drop ${lr_drop} \
---em_iter 5 \
---n_txt_mu ${n_txt_mu} \
---n_visual_mu ${n_visual_mu} \
---neg_choose_epoch ${neg_choose_epoch} \
---num_queries 10 \
---exp_id base_crop_all_merge_${seed} \
---m_classes "[12, 36, 65, 150]" \
---no_text \
---tgt_embed \
---cc_matching \
---seed ${seed} \
---crop \
---fore_min 10 \
---back_min 10 \
---mid_min 10 \
---crop_random \
---merge \
---crop_all \
-${@:1}
-
-
-seed=2021
-
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---train_path ${train_path} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---device ${device} \
---span_loss_type ${span_loss_type} \
---lr ${lr} \
---enc_layers ${enc_layers} \
---sim_loss_coef ${sim_loss_coef} \
---neg_loss_coef ${neg_loss_coef} \
---lr_gamma ${lr_gamma} \
---dec_layers ${dec_layers} \
---lr_drop ${lr_drop} \
---em_iter 5 \
---n_txt_mu ${n_txt_mu} \
---n_visual_mu ${n_visual_mu} \
---neg_choose_epoch ${neg_choose_epoch} \
---num_queries 10 \
---exp_id base_crop_all_merge_${seed} \
---m_classes "[12, 36, 65, 150]" \
---no_text \
---tgt_embed \
---cc_matching \
---seed ${seed} \
---crop \
---fore_min 10 \
---back_min 10 \
---mid_min 10 \
---crop_random \
---merge \
---crop_all \
-${@:1}
+done

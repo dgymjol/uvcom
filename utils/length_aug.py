@@ -7,15 +7,13 @@ from collections import defaultdict
 
 def crop_clip_index(start_index, end_index, non_idx=False, num_crop=1, clip_len=2):
 
-    # if clip_len < 1:# vgg
-    #     start_index = int(start_index) if start_index % 1 == 0 else int(start_index) + 1
-    #     end_index = int(end_index)
-    #     candidates = list(range((start_index) + 1, end_index, 1))
-    #     num_crop = int(num_crop)
-    # else:
-    #     candidates = list(range(start_index + clip_len, end_index, clip_len))
-
-    candidates = list(range(start_index + clip_len, end_index, clip_len))
+    if clip_len < 1:# vgg
+        start_index = int(start_index) if start_index % 1 == 0 else int(start_index) + 1
+        end_index = int(end_index)
+        candidates = list(range((start_index) + 1, end_index, 1))
+        num_crop = int(num_crop)
+    else:
+        candidates = list(range(start_index + clip_len, end_index, clip_len))
 
     if non_idx:
         candidates.append(-1) # not crop
@@ -110,6 +108,8 @@ def crop(data, moments, non_moments, thres_crop, ctx_l, clip_len):
                 
                 rss = int(ss // clip_len) if ss != 0 else 0
                 ree = int(ee // clip_len) if ee % clip_len == 0 else int(ee // clip_len) + 1
+                if clip_len < 1 and s != ss: # vgg
+                    rss += 1
                 moment['clip_id'] = [rss, ree]
                 moment['seg_sec'] = [ss - rss * clip_len, ree * clip_len - ee]
                 moment['len'] = (ree - rss)
@@ -191,6 +191,8 @@ def crop(data, moments, non_moments, thres_crop, ctx_l, clip_len):
                 else:
                     rss = int(ss // clip_len) if ss % clip_len == 0 else int(ss // clip_len) + 1
                 ree = int(ee // clip_len)
+                if clip_len < 1 and s != ss: # vgg
+                    rss -= 1
 
                 non_moment['clip_id'] = [rss, ree]
                 non_moment['len'] = (ree - rss)

@@ -167,11 +167,6 @@ class BaseOptions(object):
         parser.add_argument("--pos_query", default=1, type=int, help="pos_query")
         parser.add_argument("--no_text", action='store_true')
         parser.add_argument("--no_slot", action='store_true')
-
-        parser.add_argument('--crop', action='store_true')
-        parser.add_argument('--merge', action='store_true')
-        parser.add_argument("--thres_crop", type=int, default=10)
-        parser.add_argument("--thres_merge", type=int, default=10)
         
         parser.add_argument('--loss_m_classes', type=str, default=None)
         
