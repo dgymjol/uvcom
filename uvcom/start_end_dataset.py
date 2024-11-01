@@ -327,7 +327,7 @@ class StartEndDataset(Dataset):
                 pos_clip_indices = [gt_st, gt_st]
 
         neg_pool = list(range(0, gt_st)) + list(range(gt_ed+1, ctx_l))
-        if 'vgg' in self.dset_name:
+        if 'vgg' in self.dset_name or self.dset_name == 'nlq':
             if len(neg_pool)==1:
                 # import pdb;pdb.set_trace()
                 # neg_clip_indices = random.sample(range(gt_st, gt_ed+1), k=max_n)

@@ -31,8 +31,7 @@ class StartEndDataset_audio(Dataset):
                  max_q_l=32, max_v_l=75, data_ratio=1.0, ctx_mode="video",
                  normalize_v=True, normalize_t=True, load_labels=True,
                  clip_len=2, max_windows=5, span_loss_type="l1", txt_drop_ratio=0,
-                 dset_domain=None, m_classes = None, crop=False,
-                 fore_min=20, back_min=130, mid_min=30, crop_random=False, merge=False, crop_all=False):
+                 dset_domain=None, m_classes = None, loss_m_classes=None):
         self.dset_name = dset_name
         self.data_path = data_path
         self.data_ratio = data_ratio
@@ -60,13 +59,7 @@ class StartEndDataset_audio(Dataset):
         self.txt_drop_ratio = txt_drop_ratio
         if "val" in data_path or "test" in data_path:
             assert txt_drop_ratio == 0
-        self.crop = crop
-        self.fore_min = fore_min
-        self.back_min = back_min
-        self.mid_min = mid_min
-        self.crop_random = crop_random
-        self.merge = merge
-        self.crop_all = crop_all
+
         # checks
         assert q_feat_type in self.Q_FEAT_TYPES
 
@@ -100,14 +93,10 @@ class StartEndDataset_audio(Dataset):
         else:
             self.m_vals = None    
 
-    def crop_clip_index(self, start_index, end_index, non_idx=False, num_crop=1):
-        candidates = list(range(start_index + 2, end_index, 2))
-        if non_idx:
-            candidates.append(-1) # not crop
-        if num_crop > 1:
-            return sorted(random.sample(candidates, num_crop))
-        else: 
-            return random.sample(candidates, num_crop)
+        if loss_m_classes is not None:
+            self.loss_m_vals = [int(v) for v in loss_m_classes[1:-1].split(',')]
+        else:
+            self.loss_m_vals = None
 
 
     def load_data(self):
@@ -118,207 +107,6 @@ class StartEndDataset_audio(Dataset):
             logger.info("Using {}% of the data: {} examples"
                         .format(self.data_ratio * 100, n_examples))
 
-        if self.crop:
-
-            org_datalist = deepcopy(datalist)
-            datalist = []
-
-            for data in org_datalist:
-                data["crop_timestamp"] = [(0, self.max_v_l)]
-                datalist.append(data)
-
-                moments = data['relevant_windows']
-
-                # STEP 1: make crop index list
-                if len(moments) == 1:
-                    s, e = moments[0]
-                    s, e = int(s), int(e)
-                    end, mlen = data["duration"], e-s
-                    end = int(end)
-
-                    if (mlen >= self.mid_min):
-                        if s >= self.fore_min and end - e >= self.back_min:
-                        
-                            if self.crop_random:
-                                f = self.crop_clip_index(0, s)[0]
-                                b = self.crop_clip_index(e, end)[0]
-                                m_ = s + ((mlen // 2) // 2) * 2
-                                m1 = self.crop_clip_index(s, m_)[0]
-                                m2 = self.crop_clip_index(m_, e)[0]
-                            else:
-                                f, b = s // 2, e + ((end - e) // 2) // 2 * 2
-                                m1 = s + ((mlen // 2) // 3) * 2
-                                m2 = e - ((mlen // 2) // 3) * 2
-                                
-                            new_data = deepcopy(data)
-                            new_data['relevant_clip_ids'] = []
-                            new_data['relevant_windows'] = []
-                            for start_idx, s_crop_idx, e_crop_idx in [(s-f, m2, e), 
-                                                                        (s - f + e - m2 + end - b, m1, m2), 
-                                                                        (s - f + e - m2 + end - b + m2 - m1 + f, s, m1)]:
-                                
-                                s_crop_idx, e_crop_idx = int(s_crop_idx), int(e_crop_idx)
-                                start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
-                                s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
-                                e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
-                                
-                                for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
-                                    new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
-
-                                new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
-
-                            new_data['crop_timestamp'] = [(f // 2, s // 2), (m2 // 2, e // 2), (b // 2, end // 2), 
-                                                        (m1 // 2, m2 // 2), (0, f // 2), (s // 2, m1 // 2), (e // 2, b // 2)]
-                            datalist.append(new_data)
-                            
-                            # assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
-
-                        if self.crop_all:
-                            if end - e >= self.fore_min + self.back_min:
-                            
-                                if self.crop_random:
-                                    f, m, b = self.crop_clip_index(e, end, num_crop=3)
-                                    m_ = s + ((mlen // 2) // 2) * 2
-                                    m1 = self.crop_clip_index(s, m_)[0]
-                                    m2 = self.crop_clip_index(m_, e)[0]
-                                else:
-                                    m = e + ((end - e) // 2) // 2 * 2
-                                    f = e + ((m - e) // 2) // 2 * 2
-                                    b = m + ((end - m) // 2) // 2 * 2
-                                    m1 = s + ((mlen // 2) // 3) * 2
-                                    m2 = e - ((mlen // 2) // 3) * 2
-                                    
-                                new_data = deepcopy(data)
-                                new_data['relevant_clip_ids'] = []
-                                new_data['relevant_windows'] = []
-                                for start_idx, s_crop_idx, e_crop_idx in [(s + m - f, m2, e), 
-                                                                            (s + m - f + e - m2 + end - b, m1, m2), 
-                                                                            (s + m - f + e - m2 + end - b + m2 - m1 + f - e, s, m1)]:
-                                    
-                                    s_crop_idx, e_crop_idx = int(s_crop_idx), int(e_crop_idx)
-                                    start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
-                                    s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
-                                    e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
-                                    
-                                    for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
-                                        new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
-
-                                    new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
-
-                                s_div2 = 0 if s == 0 else s // 2
-                                new_data['crop_timestamp'] = [(0, s_div2), (f // 2, m // 2), (m2 // 2, e // 2), (b // 2, end // 2), 
-                                                            (m1 // 2, m2 // 2), (e // 2, f // 2), (s_div2, m1 // 2), (m // 2, b // 2)]
-                                
-                                datalist.append(new_data)
-                                
-                                # assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
-                                
-                                
-                            if s >= self.fore_min + self.back_min:
-                            
-                                if self.crop_random:
-                                    f, m, b = self.crop_clip_index(0, s, num_crop=3)
-                                    m_ = s + ((mlen // 2) // 2) * 2
-                                    m1 = self.crop_clip_index(s, m_)[0]
-                                    m2 = self.crop_clip_index(m_, e)[0]
-                                else:
-                                    m = (s // 2) // 2 * 2
-                                    f = (m // 2) // 2 * 2
-                                    b = m + ((s - m) // 2) // 2 * 2
-                                    m1 = s + ((mlen // 2) // 3) * 2
-                                    m2 = e - ((mlen // 2) // 3) * 2
-                                    
-                                new_data = deepcopy(data)
-                                new_data['relevant_clip_ids'] = []
-                                new_data['relevant_windows'] = []
-                                for start_idx, s_crop_idx, e_crop_idx in [(m - f, m2, e), 
-                                                                            (m - f + e - m2 + s - b, m1, m2), 
-                                                                            (m - f + e - m2 + s - b + m2 - m1 + f, s, m1)]:
-                                    
-                                    s_crop_idx, e_crop_idx = int(s_crop_idx), int(e_crop_idx)
-                                    start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
-                                    s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
-                                    e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
-                                    
-                                    for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
-                                        new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
-
-                                    new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
-
-                                new_data['crop_timestamp'] = [(f // 2, m // 2), (m2 // 2, e // 2), (b // 2, s // 2), 
-                                                            (m1 // 2, m2 // 2), (0, f // 2), (s // 2, m1 // 2), (m // 2, b // 2)]
-                                if e != end:
-                                    new_data['crop_timestamp'].append((e // 2, end // 2))
-                                
-                                datalist.append(new_data)
-                                
-                                # assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
-                            
-                else:
-                    if not self.merge:
-                        continue
-                    
-                    s, e = moments[0][0], moments[-1][1]
-                    s, e = int(s), int(e)
-                    
-                    end, mlen = data["duration"], e-s
-                    end = int(end)
-                    
-                    
-                    intervals = []
-                    if s != 0:
-                        intervals.append((0, s))
-                    for i in range(len(moments) - 1):
-                        intervals.append((moments[i][1], moments[i+1][0]))
-                    if e != end:
-                        intervals.append((e, end))
-                        
-                    random.shuffle(intervals)
-                    random.shuffle(moments)
-                    f_idx = random.sample(range(len(intervals)), 1)[0]
-                    
-                    f_intervals, b_interbals = intervals[:f_idx], intervals[f_idx:]
-
-                    new_data = deepcopy(data)
-                    new_data['relevant_clip_ids'] = []
-                    new_data['relevant_windows'] = []
-                    
-                    init_idx = 0
-                    if f_intervals:
-                        for s_i, e_i in f_intervals:
-                            init_idx += (e_i - s_i)
-                            
-                    start_idx = init_idx
-                        
-                    for s_crop_idx, e_crop_idx in moments:
-                        
-                        s_crop_idx, e_crop_idx = int(s_crop_idx), int(e_crop_idx)
-                        start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
-                        s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
-                        e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
-                        
-                        for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
-                            new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
-
-                        start_idx += (e_crop_idx - s_crop_idx)
-                        # new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
-                        
-                    new_data['relevant_windows'] = [[init_idx, start_idx]]
-                        
-                    new_data['crop_timestamp'] = []
-                    for itv in [f_intervals, moments, b_interbals]:
-                        for s_i, e_i in itv:
-                            if s_i != 0:
-                                new_data['crop_timestamp'].append((s_i // 2, e_i // 2))
-                            else:
-                                new_data['crop_timestamp'].append((0, e_i // 2))
-                                              
-                    datalist.append(new_data)
-                    
-                    # assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
-                 
-                        
-            logger.info(f"Oracle Crop : {len(org_datalist)} -> {len(datalist)}")
         return datalist
 
     def __len__(self):
@@ -335,21 +123,24 @@ class StartEndDataset_audio(Dataset):
             model_inputs["query_feat"] = self._get_query_feat_by_qid(meta["qid"])  # (Dq, ) or (Lq, Dq)
 
         if self.use_video:
-            if self.crop:
-                model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["crop_timestamp"])  # (Lv, Dv)
+            if 'org_clip_ids_order' in meta.keys():
+                model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["org_clip_ids_order"])  # (Lv, Dv)
             else:
                 model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
             ctx_l = len(model_inputs["video_feat"])
         else:
             ctx_l = self.max_v_l
+
         if self.a_feat_dir is not None:
-            if self.crop:
-                model_inputs["audio_feat"] = self._get_audio_crop_feat_by_vid(meta["vid"], meta["crop_timestamp"])  # (Lv, Da) 75 2048
+            if 'org_clip_ids_order' in meta.keys():
+                model_inputs["audio_feat"] = self._get_audio_crop_feat_by_vid(meta["vid"], meta["org_clip_ids_order"])  # (Lv, Da) 75 2048
             else:
                 model_inputs["audio_feat"] = self._get_audio_feat_by_vid(meta["vid"])  # (Lv, Da) 75 2048
             ctx_l_a = len(model_inputs["audio_feat"])
+
             if ctx_l_a < ctx_l:
                 ctx_l = ctx_l_a
+ 
             model_inputs["video_feat"] = model_inputs["video_feat"][:ctx_l]
             model_inputs["audio_feat"] = model_inputs["audio_feat"][:ctx_l]
 
@@ -363,6 +154,7 @@ class StartEndDataset_audio(Dataset):
                     [model_inputs["video_feat"], tef], dim=1)  # (Lv, Dv+2)
             else:
                 model_inputs["video_feat"] = tef
+
             if self.a_feat_dir is not None:
                 model_inputs["audio_feat"] = torch.cat(
                     [model_inputs["audio_feat"], tef], dim=1)  # (Lv, Dv+2)
@@ -380,19 +172,27 @@ class StartEndDataset_audio(Dataset):
 
                 model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
                             self.get_saliency_labels_all_tvsum(meta_label, ctx_l)
-            elif 'charades' in self.dset_name:
-                model_inputs["span_labels"] = self.get_span_labels(meta["relevant_windows"], ctx_l) # (#windows, 2)
+            elif self.dset_name == 'youtube_uni':
+                model_inputs["span_labels"] = torch.tensor([[0., 0.]])
+                meta_label = meta['label']
                 model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                    self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], ctx_l) # only one gt
-
+                            self.get_saliency_labels_all_youtube(meta_label, ctx_l)
             else:
-                model_inputs["span_labels"], lengths = self.get_span_labels(meta["relevant_windows"], ctx_l)  # (#windows, 2)
-                if "subs_train" not in self.data_path:
-                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                        self.get_saliency_labels_all(meta["relevant_clip_ids"], meta["saliency_scores"], ctx_l)
-                else:
-                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], ctx_l)  # only one gt
+                if "relevant_windows" in meta: ## For Qvhighlights test set
+                    model_inputs["span_labels"], lengths = self.get_span_labels(meta["relevant_windows"], ctx_l)  # (#windows, 2)
+                    if self.dset_name in ['charades', 'tacos', 'activitynet']:
+                        model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
+                            self.get_saliency_labels_sub_as_query(meta["relevant_windows"], ctx_l) # only one gt
+                    elif self.dset_name in ['charades_vgg', 'nlq']:
+                        model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
+                            self.get_saliency_labels_sub_as_query_(meta["relevant_windows"][0], meta["duration"], ctx_l, 2)  # only one gt
+                    elif "subs_train" not in self.data_path:
+                        model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
+                            self.get_saliency_labels_all(meta["relevant_clip_ids"], meta["saliency_scores"], ctx_l)
+                    else:
+                        model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                            "saliency_all_labels"] = \
+                            self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"], ctx_l)  # only one gt
 
                 moment_class = []
                 if self.m_vals is not None:
@@ -403,6 +203,16 @@ class StartEndDataset_audio(Dataset):
                                 break
                     model_inputs["moment_class"] = torch.tensor(moment_class)
 
+                loss_moment_class = []
+                if self.loss_m_vals is not None:
+                    for l in lengths:
+                        for m_cls, m_val in enumerate(self.loss_m_vals):
+                            if l <= m_val:
+                                loss_moment_class.append(m_cls)
+                                break
+                    model_inputs["loss_moment_class"] = torch.tensor(loss_moment_class)
+                    assert len(model_inputs["loss_moment_class"]) == len(lengths)
+
         return dict(meta=meta, model_inputs=model_inputs)
 
     def get_query(self, query):
@@ -411,22 +221,74 @@ class StartEndDataset_audio(Dataset):
         return self.embedding(word_inds)
 
     def get_saliency_labels_sub_as_query(self, gt_window, ctx_l, max_n=2):
-        gt_st = int(gt_window[0] / self.clip_len)
-        gt_ed = max(0, min(int(gt_window[1] / self.clip_len), ctx_l) - 1)
+        pos_pool = []
+        neg_pool = []
+
+        ns = 0
+        for s, e in gt_windows:
+            gt_st = int(s / self.clip_len)
+            gt_ed = max(0, min(int(e / self.clip_len), ctx_l) - 1)
+            if gt_st > gt_ed:
+                gt_st = gt_ed
+
+            pos_pool += list(range(gt_st, gt_ed+1))
+
+            ne = gt_st
+            neg_pool += list(range(ns, ne+1))
+            ns = ne
+
+        if ctx_l != ns:
+            neg_pool += list(range(ns, ctx_l))
+
+
+        if len(pos_pool) < max_n:
+            pos_clip_indices = [pos_pool[0], pos_pool[0]]
+        else:
+            pos_clip_indices = random.sample(pos_pool, k=max_n)
+
+        if len(neg_pool) < max_n:
+            pos_clip_indices = [neg_pool[0], neg_pool[0]]
+        else:
+            neg_clip_indices = random.sample(neg_pool, k=max_n)
+
+        score_array = np.zeros(ctx_l)
+        score_array[gt_st:gt_ed+1] = 1
+
+        return pos_clip_indices, neg_clip_indices, score_array
+
+    def get_saliency_labels_sub_as_query_(self, gt_window, duration, ctx_l, max_n=2):
+        clip_len = duration / ctx_l
+        gt_st = int(gt_window[0] / clip_len)
+        gt_ed = max(0, min(int(gt_window[1] / clip_len), ctx_l) - 1)
         if gt_st > gt_ed:
             gt_st = gt_ed
 
         if gt_st != gt_ed:
-            pos_clip_indices = random.sample(range(gt_st, gt_ed+1), k=max_n)
+            pos_clip_indices = random.sample(range(gt_st, gt_ed + 1), k=max_n)
         else:
-            pos_clip_indices = [gt_st, gt_st]
+            if self.dset_name == 'nlq':
+                pos_clip_indices = [gt_st] * 2
+            else:
+                pos_clip_indices = [gt_st, gt_st]
 
         neg_pool = list(range(0, gt_st)) + list(range(gt_ed+1, ctx_l))
-        neg_clip_indices = random.sample(neg_pool, k=max_n)
-        # return pos_clip_indices, neg_clip_indices
-        
+        if 'vgg' in self.dset_name:
+            if len(neg_pool)==1:
+                # import pdb;pdb.set_trace()
+                # neg_clip_indices = random.sample(range(gt_st, gt_ed+1), k=max_n)
+                neg_clip_indices = [neg_pool[0], -1]
+            elif len(neg_pool)==0:
+                # neg_clip_indices = random.sample(range(gt_st, gt_ed+1), k=max_n)
+                neg_clip_indices = [-1,-1]
+            # if len(neg_pool) < 2:
+            #     neg_clip_indices = random.sample(range(gt_st, gt_ed+1), k=max_n)
+            else:
+                try:
+                    neg_clip_indices = random.sample(neg_pool, k=max_n)
+                except:
+                    neg_clip_indices = pos_clip_indices
         score_array = np.zeros(ctx_l)
-        score_array[gt_st:gt_ed+1] = 1
+        score_array[gt_st:gt_ed + 1] = 1
 
         return pos_clip_indices, neg_clip_indices, score_array
 
@@ -536,6 +398,33 @@ class StartEndDataset_audio(Dataset):
 
         return pos_clip_indices, neg_clip_indices, score_array
     
+    def get_saliency_labels_all_youtube(self, labels, ctx_l, max_n=1, add_easy_negative=False):
+        
+        # Youtube-hl only have binary score
+        agg_scores = np.array(labels)[:, 0] # (L, 1) --> (L, )
+        score_array = agg_scores * 1
+        
+        sort_indices = np.argsort(agg_scores)  # increasing
+
+        hard_pos_clip_indices = [min(idx, ctx_l-1) for idx in sort_indices[-max_n:]]
+        hard_neg_clip_indices = [min(idx, ctx_l-1) for idx in sort_indices[:max_n]]
+        easy_pos_clip_indices = []
+        easy_neg_clip_indices = []
+        if add_easy_negative:
+            easy_neg_pool = list(set(range(ctx_l)))
+            if len(easy_neg_pool) >= max_n:
+                easy_pos_clip_indices = random.sample(rel_clip_ids, k=max_n)
+                easy_neg_clip_indices = random.sample(easy_neg_pool, k=max_n)
+            else:  # copy the hard ones
+                easy_pos_clip_indices = hard_pos_clip_indices
+                easy_neg_clip_indices = hard_neg_clip_indices
+
+        pos_clip_indices = hard_pos_clip_indices + easy_pos_clip_indices
+        neg_clip_indices = hard_neg_clip_indices + easy_neg_clip_indices
+
+        return pos_clip_indices, neg_clip_indices, score_array
+    
+    
     def get_span_labels_tvsum(self):
         windows = torch.tensor([[0.0,1.0]])
         windows = span_xx_to_cxw(windows)
@@ -570,6 +459,20 @@ class StartEndDataset_audio(Dataset):
         if self.dset_name == 'tvsum':
             q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid))) # 'token', 'text'
             return torch.from_numpy(q_feat['token'])
+        # youtube-hl
+        elif self.dset_name == 'youtube_uni':
+            q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid)))
+            return torch.from_numpy(q_feat['last_hidden_state'])
+        
+        elif self.dset_name in ['tacos', 'nlq']:
+            q_feat_path = join(self.q_feat_dir, f"{qid}.npz")
+            q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
+            if self.q_feat_type == "last_hidden_state":
+                q_feat = q_feat[:self.max_q_l]
+            if self.normalize_t:
+                q_feat = l2_normalize_np_array(q_feat)
+            if self.txt_drop_ratio > 0:
+                q_feat = self.random_drop_rows(q_feat)
         else:
             # QVhighlight dataset
             q_feat_path = join(self.q_feat_dir, f"qid{qid}.npz")
@@ -617,6 +520,26 @@ class StartEndDataset_audio(Dataset):
             v_feat_list = [e[:min_len] for e in v_feat_list]
             v_feat = np.concatenate(v_feat_list, axis=1)
 
+        elif self.dset_name == 'youtube_uni':
+            v_feat_list = []
+            for _feat_dir in self.v_feat_dirs:
+                # Only single npz files per directory
+                try:
+                    _feat_path = join(_feat_dir, f"{vid}.npz")
+                    _feat = np.load(_feat_path)["features"][:self.max_v_l].astype(np.float32)
+                except:
+                    _feat_path = join(_feat_dir, f"{vid}.npy")
+                    _feat = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
+                
+                # _feat = _feat_rgb
+                if self.normalize_v:
+                    _feat = l2_normalize_np_array(_feat)
+                v_feat_list.append(_feat)
+            # some features are slightly longer than the others
+            min_len = min([len(e) for e in v_feat_list])
+            v_feat_list = [e[:min_len] for e in v_feat_list] # TODO do we need to cut the length over the min_len?
+            v_feat = np.concatenate(v_feat_list, axis=1)
+
         else:
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
@@ -635,7 +558,7 @@ class StartEndDataset_audio(Dataset):
             v_feat = np.concatenate(v_feat_list, axis=1)
         return torch.from_numpy(v_feat)  # (Lv, D)
 
-    def _get_video_crop_feat_by_vid(self, vid, crop_timestamp):
+    def _get_video_crop_feat_by_vid(self, vid, org_clip_ids_order):
         if self.dset_name == 'tvsum':
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
@@ -667,7 +590,7 @@ class StartEndDataset_audio(Dataset):
                     
                 # relocate clips
                 _feats = []
-                for s, e in crop_timestamp:
+                for s, e in org_clip_ids_order:
                     _feats.append(_feat[s:e].astype(np.float32))
                 _feats = np.concatenate(_feats, axis=0)
                 
@@ -690,12 +613,12 @@ class StartEndDataset_audio(Dataset):
 
         return torch.from_numpy(a_feat)  # (D, ) or (Lq, D)
 
-    def _get_audio_crop_feat_by_vid(self, vid, crop_timestamp):
+    def _get_audio_crop_feat_by_vid(self, vid, org_clip_ids_order):
         a_feat_path = join(self.a_feat_dir, f"{vid}.npy")
         a_feat = np.load(a_feat_path)[:self.max_v_l].astype(np.float32)
         
         _feats = []
-        for s, e in crop_timestamp:
+        for s, e in org_clip_ids_order:
             _feats.append(a_feat[s:e].astype(np.float32))
         a_feat = np.concatenate(_feats, axis=0)
                 
@@ -730,7 +653,10 @@ def start_end_collate_audio(batch):
         if k == "moment_class":
             batched_data[k] = [dict(m_cls=e["model_inputs"]["moment_class"]) for e in batch]
             continue
-
+        if k == "loss_moment_class":
+            batched_data[k] = [dict(m_cls=e["model_inputs"]["loss_moment_class"]) for e in batch]
+            continue
+        
         batched_data[k] = pad_sequences_1d(
             [e["model_inputs"][k] for e in batch], dtype=torch.float32, fixed_length=None)
     return batch_meta, batched_data
@@ -764,6 +690,11 @@ def prepare_batch_inputs_audio(batched_model_inputs, device, non_blocking=False)
             dict(m_cls=e["m_cls"].to(device, non_blocking=non_blocking))
             for e in batched_model_inputs["moment_class"]
         ]
-        
+    if "loss_moment_class" in batched_model_inputs:
+        targets["loss_moment_class"] = [
+            dict(m_cls=e["m_cls"].to(device, non_blocking=non_blocking))
+            for e in batched_model_inputs["loss_moment_class"]
+        ]
+   
     targets = None if len(targets) == 0 else targets
     return model_inputs, targets
