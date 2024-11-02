@@ -333,7 +333,7 @@ class SetCriterion(nn.Module):
             # loss_giou = 1 - torch.diag(generalized_temporal_iou(src_span_indices, tgt_span_indices))
             loss_giou = loss_span.new_zeros([1])
 
-        if self.length_span_weight or self.length_span_weight:
+        if self.length_giou_weight or self.length_span_weight:
             target_length = targets['moment_length']
             tgt_length_weight = torch.cat([self.weight_dist[t['m_len'][i]] for t, (_, i) in zip(target_length, indices)], dim=0)  # (#spans, 2)
 
