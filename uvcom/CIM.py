@@ -100,7 +100,7 @@ class CIM(nn.Module):
             assert not self.no_text
         if not self.no_text and self.tgt_embed:
             assert not self.no_slot
-            assert lenquery is None
+            assert length_query is None
 
         self.span_pattern = False
         if m_classes is not None:
