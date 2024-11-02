@@ -81,6 +81,7 @@ class CIM(nn.Module):
                  em_iter = 5,
                  cross_fusion = False,
                  m_classes=None, tgt_embed=False, class_anchor=False, no_text=False, no_slot=False,
+                 length_query=None,
                  ):
         super().__init__()
 
@@ -99,16 +100,25 @@ class CIM(nn.Module):
             assert not self.no_text
         if not self.no_text and self.tgt_embed:
             assert not self.no_slot
+            assert lenquery is None
 
         self.span_pattern = False
         if m_classes is not None:
             self.num_classes = len(m_classes[1:-1].split(','))
             if self.tgt_embed:
-                self.span_pattern = True
+                if length_query is None:
+                    self.span_pattern = True
+                else:
+                    self.span_pattern = False
                 if self.no_text:
                     self.patterns = nn.Embedding(self.num_classes, d_model)
         else:
             self.num_classes = 1
+
+        if length_query is not None:
+            self.len_query_num = [int(lq) for lq in length_query[1:-1].split(',')]
+        else:
+            self.len_query_num = None
 
         t2v_encoder_layer = T2V_TransformerEncoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
@@ -118,7 +128,9 @@ class CIM(nn.Module):
         if not no_slot:
             num_slots = num_queries
             if not self.tgt_embed:
-                    num_slots=num_queries * self.num_classes
+                num_slots=num_queries * self.num_classes
+            if length_query is not None:
+                num_slots = sum(self.len_query_num)
             if not no_text:
                 self.processer_for_tgt = SlotAttention(num_iterations=5, num_slots=num_slots, d_model=d_model)
         else:
@@ -275,9 +287,15 @@ class CIM(nn.Module):
         if self.no_text:
             if self.m_classes is not None:
                 if self.tgt_embed:
-                    tgt = self.patterns.weight[:, None, None, :].repeat(1, self.num_queries, bs, 1).flatten(0, 1)
-                    if not self.class_anchor:
-                        refpoint_embed = refpoint_embed.repeat(self.num_classes, 1, 1)
+                    if  self.len_query_num is None:
+                        tgt = self.patterns.weight[:, None, None, :].repeat(1, self.num_queries, bs, 1).flatten(0, 1)
+                        if not self.class_anchor:
+                            refpoint_embed = refpoint_embed.repeat(self.num_classes, 1, 1)
+                    else:
+                        tgt = torch.cat(
+                            [self.patterns.weight[:, None, None, :][i].repeat(lq, bs, 1) 
+                            for i, lq in enumerate(self.len_query_num)], dim=0)
+    
                 else:
                     tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device="cuda")
             else:
@@ -1169,6 +1187,7 @@ def build_CIM(args):
         class_anchor=args.class_anchor,
         no_text=args.no_text,
         no_slot=args.no_slot,
+        length_query=args.length_query,
     )
 
 

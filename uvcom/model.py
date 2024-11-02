@@ -54,7 +54,7 @@ class UVCOM(nn.Module):
     def __init__(self, CIM, position_embed, txt_position_embed, txt_dim, vid_dim,
                  num_queries, input_dropout, aux_loss=False,
                  max_v_l=75, span_loss_type="l1", use_txt_pos=False, n_input_proj=2, aud_dim=0,neg_choose_epoch=80,
-                 m_classes=None, tgt_embed=False, class_anchor=False):
+                 m_classes=None, tgt_embed=False, class_anchor=False, length_query=None,):
         """ Initializes the model.
         Parameters:
             transformer: torch module of the transformer architecture. See transformer.py
@@ -98,7 +98,12 @@ class UVCOM(nn.Module):
 
         self.use_txt_pos = use_txt_pos
         self.n_input_proj = n_input_proj
-        self.query_embed = nn.Embedding(num_queries, 2*self.num_patterns)
+        if length_query is None:
+            self.query_embed = nn.Embedding(num_queries, 2*self.num_patterns)
+        else:
+            self.len_query_num = [int(lq) for lq in length_query[1:-1].split(',')]
+            self.num_queries = sum(self.len_query_num)
+            self.query_embed = nn.Embedding(self.num_queries, 2)
         relu_args = [True] * 3
         relu_args[n_input_proj-1] = False
         self.input_txt_proj = nn.Sequential(*[
@@ -240,7 +245,8 @@ class SetCriterion(nn.Module):
     """
 
     def __init__(self, matcher, weight_dict, eos_coef, losses, span_loss_type, max_v_l,
-                 saliency_margin=1, use_matcher=True, m_classes=None, cta_coef=0.5):
+                 saliency_margin=1, use_matcher=True, m_classes=None, cta_coef=0.5,
+                 length_span_weight=False, length_giou_weight=False):
         """ Create the criterion.
         Parameters:
             matcher: module able to compute a matching between targets and proposals
@@ -276,6 +282,30 @@ class SetCriterion(nn.Module):
         
         self.cta_coef = cta_coef
 
+        self.length_span_weight = length_span_weight
+        self.length_giou_weight = length_giou_weight
+
+
+        if length_giou_weight or length_span_weight:
+
+            # 새로운 정규분포 생성 (조절 가능한 파라미터로 범위 및 감쇠 조정)
+            x_values_custom = np.linspace(0, 150, 300)
+
+            # 평균 및 표준편차 설정 (중심: 0, 범위 끝: 150에서 0.7이 되도록 조정)
+            mean_custom = 0
+            std_dev_custom = 30  # 감쇠를 조절하는 표준편차 (이 값을 조정하여 곡선의 폭을 조절할 수 있음)
+
+            peak_value = 2
+            end_value = 1
+
+            # 스케일링 인자를 계산하여 0에서의 값을 1로 만들고, 150에서의 값을 0.7로 유지
+            scale_factor = (peak_value - end_value) / (np.exp(-0.5 * ((x_values_custom - mean_custom) / std_dev_custom) ** 2).max())
+
+            # 조정된 정규분포 계산
+            pdf_values_custom = scale_factor * np.exp(-0.5 * ((x_values_custom - mean_custom) / std_dev_custom) ** 2) + end_value
+
+            self.weight_dist = torch.tensor(pdf_values_custom, device='cuda')
+
     def loss_spans(self, outputs, targets, indices):
         """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
            targets dicts must contain the key "spans" containing a tensor of dim [nb_tgt_spans, 2]
@@ -303,6 +333,16 @@ class SetCriterion(nn.Module):
             # loss_giou = 1 - torch.diag(generalized_temporal_iou(src_span_indices, tgt_span_indices))
             loss_giou = loss_span.new_zeros([1])
 
+        if self.length_span_weight or self.length_span_weight:
+            target_length = targets['moment_length']
+            tgt_length_weight = torch.cat([self.weight_dist[t['m_len'][i]] for t, (_, i) in zip(target_length, indices)], dim=0)  # (#spans, 2)
+
+        if self.length_span_weight:
+            loss_span = loss_span.mean(dim=1) * tgt_length_weight
+
+        if self.length_giou_weight:
+            loss_giou = loss_giou * tgt_length_weight
+            
         losses = {}
         losses['loss_span'] = loss_span.mean()
         losses['loss_giou'] = loss_giou.mean()
@@ -609,6 +649,7 @@ def build_model(args):
             m_classes=args.m_classes,
             tgt_embed=args.tgt_embed,
             class_anchor=args.class_anchor,
+            length_query=args.length_query,
         )
     else:
         model = UVCOM(
@@ -628,6 +669,7 @@ def build_model(args):
             m_classes=args.m_classes,
             tgt_embed=args.tgt_embed,
             class_anchor=args.class_anchor,
+            length_query=args.length_query,
         )
 
     matcher = build_matcher(args)
@@ -655,7 +697,8 @@ def build_model(args):
         eos_coef=args.eos_coef,
         span_loss_type=args.span_loss_type, max_v_l=args.max_v_l,
         saliency_margin=args.saliency_margin, use_matcher=use_matcher,
-        m_classes=args.m_classes, cta_coef=args.cta_coef
+        m_classes=args.m_classes, cta_coef=args.cta_coef,
+        length_span_weight=args.length_span_weight, length_giou_weight=args.length_giou_weight,
     )
     criterion.to(device)
     return model, criterion

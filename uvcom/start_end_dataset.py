@@ -244,6 +244,12 @@ class StartEndDataset(Dataset):
                                     break
                         model_inputs["loss_moment_class"] = torch.tensor(loss_moment_class)
                         assert len(model_inputs["loss_moment_class"]) == len(lengths)
+
+                    moment_length = []
+                    for l in lengths:
+                        moment_length.append(l)
+                    model_inputs["moment_length"] = torch.tensor(moment_length)
+                    assert len(model_inputs["moment_length"]) == len(lengths)
                        
 
         return dict(meta=meta, model_inputs=model_inputs)
@@ -709,7 +715,9 @@ def start_end_collate(batch):
         if k == "loss_moment_class":
             batched_data[k] = [dict(m_cls=e["model_inputs"]["loss_moment_class"]) for e in batch]
             continue
-        
+        if k == "moment_length":
+            batched_data[k] = [dict(m_len=e["model_inputs"]["moment_length"]) for e in batch]
+            continue
 
         batched_data[k] = pad_sequences_1d(
             [e["model_inputs"][k] for e in batch], dtype=torch.float32, fixed_length=None)
@@ -746,6 +754,11 @@ def prepare_batch_inputs(batched_model_inputs, device, non_blocking=False):
         targets["loss_moment_class"] = [
             dict(m_cls=e["m_cls"].to(device, non_blocking=non_blocking))
             for e in batched_model_inputs["loss_moment_class"]
+        ]
+    if "moment_length" in batched_model_inputs:
+        targets["moment_length"] = [
+            dict(m_len=e["m_len"].to(device, non_blocking=non_blocking))
+            for e in batched_model_inputs["moment_length"]
         ]
 
     targets = None if len(targets) == 0 else targets
