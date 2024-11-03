@@ -53,9 +53,11 @@ fi
 bsz=8
 
 
-gpunum=1
+results_root='result_1102_/cha_vgg'
 
-list="2025 2024 2023 2022 2021"
+gpunum=4
+
+list="2021 2022 2023 2024 2025 2026 2027 2028"
 
 for seed in $list
 do
@@ -89,8 +91,8 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
 --dec_layers ${dec_layers} \
 --num_queries 10 \
 --seed ${seed} \
---train_path data/charades_vgg_crop_10_seed_${aug_seed}.jsonl \
---exp_id augseed_${aug_seed}_seed_${seed} \
+--train_path data/charades_vgg_temp_and_feat_mix_5_seed_${aug_seed}.jsonl \
+--exp_id lad_tempandfeat_5_${aug_seed}_seed_${seed} \
 --m_classes "[5.67, 14, 10000]" \
 --no_text \
 --cc_matching \
@@ -99,41 +101,40 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
 ${@:1}
 
 
-aug_seed=1
-
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---train_path ${train_path} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---device ${device} \
---span_loss_type ${span_loss_type} \
---lr ${lr} \
---enc_layers ${enc_layers} \
---sim_loss_coef ${sim_loss_coef} \
---neg_loss_coef ${neg_loss_coef} \
---lr_gamma ${lr_gamma} \
---clip_length ${clip_length} \
---neg_choose_epoch ${neg_choose_epoch} \
---lr_drop ${lr_drop} \
---max_v_l ${max_v} \
---dec_layers ${dec_layers} \
---num_queries 10 \
---seed ${seed} \
---train_path data/charades_vgg_crop_10_seed_${aug_seed}.jsonl \
---exp_id augseed_${aug_seed}_seed_${seed} \
---m_classes "[5.67, 14, 10000]" \
---no_text \
---cc_matching \
---tgt_embed \
---n_epoch 200 \
-${@:1}
+# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python uvcom/train.py \
+# --dset_name ${dset_name} \
+# --ctx_mode ${ctx_mode} \
+# --train_path ${train_path} \
+# --eval_path ${eval_path} \
+# --eval_split_name ${eval_split_name} \
+# --v_feat_dirs ${v_feat_dirs[@]} \
+# --v_feat_dim ${v_feat_dim} \
+# --t_feat_dir ${t_feat_dir} \
+# --t_feat_dim ${t_feat_dim} \
+# --bsz ${bsz} \
+# --results_root ${results_root} \
+# --device ${device} \
+# --span_loss_type ${span_loss_type} \
+# --lr ${lr} \
+# --enc_layers ${enc_layers} \
+# --sim_loss_coef ${sim_loss_coef} \
+# --neg_loss_coef ${neg_loss_coef} \
+# --lr_gamma ${lr_gamma} \
+# --clip_length ${clip_length} \
+# --neg_choose_epoch ${neg_choose_epoch} \
+# --lr_drop ${lr_drop} \
+# --max_v_l ${max_v} \
+# --dec_layers ${dec_layers} \
+# --num_queries 10 \
+# --seed ${seed} \
+# --train_path data/charades_vgg_temp_and_feat_mix_10_seed_${aug_seed}.jsonl \
+# --exp_id lengquery_tempandfeat_10_${aug_seed}_seed_${seed} \
+# --m_classes "[5.67, 14, 10000]" \
+# --no_text \
+# --cc_matching \
+# --tgt_embed \
+# --n_epoch 200 \
+# --length_query "[17, 13, 9, 5]" \
+# ${@:1}
 
 done

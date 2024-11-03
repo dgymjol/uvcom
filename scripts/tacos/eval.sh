@@ -98,7 +98,9 @@
 # done
 
 # ckpt_path=results_tacos/base/tacos-video_tef-base_2025/model_best.ckpt
-ckpt_path=results_tacos/base/tacos-video_tef-base_2024/model_best.ckpt
+# ckpt_path=results_tacos/crop_aug_10/tacos-video_tef-augseed_0_seed_2025/model_best.ckpt
+ckpt_path=results_tacos/crop_aug_10/tacos-video_tef-augseed_1_seed_2024/model_best.ckpt
+# ckpt_path=results_tacos/crop_aug_10/tacos-video_tef-notext_augseed_0_seed_2024/model_best.ckpt
 # ckpt_path=results_tacos/tgt_cc/tacos-video_tef-base_10_19_38_2025/model_best.ckpt
 eval_split_name=val
 # eval_path=data/tacos/val.jsonl
@@ -107,7 +109,7 @@ eval_path=data/tacos/test.jsonl
 echo ${ckpt_path}
 echo ${eval_split_name}
 echo ${eval_path}
-PYTHONPATH=$PYTHONPATH:. python uvcom/inference.py \
+CUDA_VISIBLE_DEVICES=5 PYTHONPATH=$PYTHONPATH:. python uvcom/inference.py \
 --resume ${ckpt_path} \
 --eval_split_name ${eval_split_name} \
 --eval_path ${eval_path} \

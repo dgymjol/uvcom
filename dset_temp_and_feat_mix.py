@@ -248,7 +248,9 @@ def feat_mix(data, moments, non_moments, ctx_l, clip_len, db_range, moment_db):
         non_moment = dict()
 
         need_len = (e- s)
-
+        if need_len < clip_len:
+            return None
+            
         find = False
         db_range_idx = -1
         for db_range_ in db_range:

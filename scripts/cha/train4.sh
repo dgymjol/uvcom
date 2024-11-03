@@ -55,9 +55,9 @@ fi
 #### training
 bsz=8
 
-results_root='result_1102_/cha'
+results_root='result_1102/cha'
 
-gpunum=7
+gpunum=1
 
 list="2021 2022 2023 2024 2025 2026 2027 2028"
 
